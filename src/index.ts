@@ -295,6 +295,30 @@ async function runDeploy(args: string[], json: boolean): Promise<void> {
   const deployPackage = await createDeployArchive(buildDir);
 
   try {
+    if (!json) {
+      process.stdout.write("Packaging build output...\n");
+      if (deployPackage.workerEntry) {
+        process.stdout.write(`  Worker entry: ${deployPackage.workerEntry}\n`);
+      } else {
+        process.stdout.write("  Worker entry: auto-generated asset worker\n");
+      }
+      if (deployPackage.assetsDirectory) {
+        process.stdout.write(
+          `  Assets directory: ${deployPackage.assetsDirectory} (${deployPackage.assetsCount} files)\n`,
+        );
+      } else {
+        process.stdout.write("  Assets directory: none\n");
+      }
+      if (deployPackage.databaseMigrationsDirectory) {
+        process.stdout.write(
+          `  Database migrations: ${deployPackage.databaseMigrationsDirectory} (${deployPackage.databaseMigrationFiles} files)\n`,
+        );
+      } else {
+        process.stdout.write("  Database migrations: none\n");
+      }
+      process.stdout.write(`Deploying to ${config.appName}...\n`);
+    }
+
     const formData = new FormData();
     const archiveContents = await readFile(deployPackage.archivePath);
     formData.set(
@@ -323,27 +347,7 @@ async function runDeploy(args: string[], json: boolean): Promise<void> {
       return;
     }
 
-    process.stdout.write("Packaging build output...\n");
-    if (deployPackage.workerEntry) {
-      process.stdout.write(`  Worker entry: ${deployPackage.workerEntry}\n`);
-    } else {
-      process.stdout.write("  Worker entry: auto-generated asset worker\n");
-    }
-    if (deployPackage.assetsDirectory) {
-      process.stdout.write(
-        `  Assets directory: ${deployPackage.assetsDirectory} (${deployPackage.assetsCount} files)\n`,
-      );
-    } else {
-      process.stdout.write("  Assets directory: none\n");
-    }
-    if (deployPackage.databaseMigrationsDirectory) {
-      process.stdout.write(
-        `  Database migrations: ${deployPackage.databaseMigrationsDirectory} (${deployPackage.databaseMigrationFiles} files)\n`,
-      );
-    } else {
-      process.stdout.write("  Database migrations: none\n");
-    }
-    process.stdout.write(`Deploying to ${config.appName}... done\n\n`);
+    process.stdout.write("Done\n\n");
     process.stdout.write("Deployment successful:\n");
     process.stdout.write(`  URL: ${response.deployment.url}\n`);
     process.stdout.write(`  Version: ${response.deployment.version}\n`);
