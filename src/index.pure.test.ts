@@ -171,12 +171,19 @@ describe("isSandboxIdentityResponse", () => {
 });
 
 describe("parseJson", () => {
-  it("parses valid JSON", () => {
-    assert.deepEqual(parseJson('{"a":1}'), { a: 1 });
+  it("returns { ok: true, value } for valid JSON", () => {
+    assert.deepEqual(parseJson('{"a":1}'), { ok: true, value: { a: 1 } });
   });
 
-  it("returns null on invalid JSON", () => {
-    assert.equal(parseJson("not json"), null);
+  it("returns { ok: false } on invalid JSON", () => {
+    assert.deepEqual(parseJson("not json"), { ok: false });
+  });
+
+  it("distinguishes a legitimate null body from a parse failure (Bug 3)", () => {
+    // A valid JSON `null` must be ok:true with value null — NOT conflated with
+    // a parse failure.
+    assert.deepEqual(parseJson("null"), { ok: true, value: null });
+    assert.deepEqual(parseJson(""), { ok: false });
   });
 });
 
