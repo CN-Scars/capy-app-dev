@@ -5,6 +5,7 @@ import {
   ApiError,
   apiRequest,
   CliError,
+  fetchWithTimeout,
   getApiContext,
   resetSandboxIdentityCache,
   resolveSandboxIdentity,
@@ -224,5 +225,37 @@ describe("getApiContext (auth resolution order)", () => {
       getApiContext(),
       (err: unknown) => err instanceof CliError && err.code === "INVALID_API_URL",
     );
+  });
+});
+
+describe("fetchWithTimeout (Bug 5 — network timeout)", () => {
+  it("maps a fetch timeout (TimeoutError) to REQUEST_TIMEOUT", async () => {
+    // When AbortSignal.timeout fires, the platform fetch rejects with a
+    // TimeoutError DOMException. Simulate that directly (deterministic, no real
+    // timer) and assert fetchWithTimeout maps it to a coded REQUEST_TIMEOUT.
+    globalThis.fetch = (() =>
+      Promise.reject(new DOMException("The operation timed out.", "TimeoutError"))) as typeof fetch;
+
+    await assert.rejects(
+      fetchWithTimeout("https://blackhole.test", {}, 50),
+      (err: unknown) => err instanceof CliError && err.code === "REQUEST_TIMEOUT",
+    );
+  });
+
+  it("maps a non-timeout network failure to NETWORK_ERROR", async () => {
+    globalThis.fetch = (() => Promise.reject(new TypeError("fetch failed"))) as typeof fetch;
+
+    await assert.rejects(
+      fetchWithTimeout("https://broken.test", {}, 1000),
+      (err: unknown) => err instanceof CliError && err.code === "NETWORK_ERROR",
+    );
+  });
+
+  it("returns the response when the server replies in time", async () => {
+    globalThis.fetch = (() => Promise.resolve(new Response("ok", { status: 200 }))) as typeof fetch;
+
+    const res = await fetchWithTimeout("https://fast.test", {}, 1000);
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), "ok");
   });
 });

@@ -28,6 +28,10 @@ const SANDBOX_SECRET_ENV_NAME = "CAPY_SECRET";
 const DEFAULT_SCAFFOLD_PATH_ENV = "CAPY_DEFAULT_SCAFFOLD_PATH";
 const DEFAULT_SCAFFOLD_REPO_ENV = "CAPY_DEFAULT_SCAFFOLD_REPO";
 const DEFAULT_SCAFFOLD_REF_ENV = "CAPY_DEFAULT_SCAFFOLD_REF";
+/** Network timeout for API requests (ms). A stalled connection must not hang the CLI. */
+const API_REQUEST_TIMEOUT_MS = 30_000;
+/** Timeout for the scaffold `git clone` (ms). */
+const GIT_CLONE_TIMEOUT_MS = 60_000;
 
 interface ProjectConfig {
   appName: string;
@@ -491,6 +495,31 @@ export async function getApiContext(options?: { requireUserId?: boolean }): Prom
   };
 }
 
+/**
+ * `fetch` with a hard timeout. Without this a stalled connection (server accepts
+ * the socket but never responds) hangs the process forever, which hangs the agent
+ * that invoked the CLI. On timeout the request is aborted and a coded CliError is
+ * thrown instead of leaking a raw AbortError.
+ */
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  try {
+    return await fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new CliError(`Request timed out after ${timeoutMs}ms`, {
+        code: "REQUEST_TIMEOUT",
+      });
+    }
+    throw new CliError(error instanceof Error ? error.message : "Network request failed", {
+      code: "NETWORK_ERROR",
+    });
+  }
+}
+
 export async function resolveSandboxIdentity(
   baseUrl: URL,
   token: string,
@@ -499,14 +528,18 @@ export async function resolveSandboxIdentity(
     return cachedSandboxIdentity;
   }
 
-  const response = await fetch(new URL("/internal/validate-sandbox-token", baseUrl), {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
+  const response = await fetchWithTimeout(
+    new URL("/internal/validate-sandbox-token", baseUrl),
+    {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ token }),
     },
-    body: JSON.stringify({ token }),
-  });
+    API_REQUEST_TIMEOUT_MS,
+  );
 
   const rawText = await response.text();
   const payload = parseJson(rawText);
@@ -567,11 +600,15 @@ export async function apiRequest<T>(
     body = JSON.stringify(options.json);
   }
 
-  const response = await fetch(url, {
-    method: options.method,
-    headers,
-    body,
-  });
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: options.method,
+      headers,
+      body,
+    },
+    API_REQUEST_TIMEOUT_MS,
+  );
 
   const rawText = await response.text();
   const payload = parseJson(rawText);
@@ -850,7 +887,7 @@ async function downloadDefaultScaffoldRepo(): Promise<ScaffoldSource> {
   gitArgs.push(repoUrl, checkoutDir);
 
   try {
-    await execFileAsync("git", gitArgs);
+    await execFileAsync("git", gitArgs, { signal: AbortSignal.timeout(GIT_CLONE_TIMEOUT_MS) });
   } catch (error) {
     await rm(tempRoot, { recursive: true, force: true });
     throw new CliError(
