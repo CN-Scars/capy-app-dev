@@ -188,7 +188,7 @@ async function main(): Promise<void> {
   }
 }
 
-async function runCreate(args: string[], json: boolean): Promise<void> {
+export async function runCreate(args: string[], json: boolean): Promise<void> {
   if (args.length !== 1) {
     throw new CliError("Usage: capy-app-dev create <app-name>", {
       code: "INVALID_USAGE",
@@ -244,7 +244,7 @@ async function runCreate(args: string[], json: boolean): Promise<void> {
   process.stdout.write(`URL: ${config.url}\n`);
 }
 
-async function runInit(args: string[], json: boolean): Promise<void> {
+export async function runInit(args: string[], json: boolean): Promise<void> {
   const { dir } = parseDirOption(args, "init");
   const targetDir = path.resolve(process.cwd(), dir ?? ".");
   const scaffold = await resolveDefaultScaffoldSource();
@@ -305,7 +305,7 @@ async function runInit(args: string[], json: boolean): Promise<void> {
   }
 }
 
-async function runDeploy(args: string[], json: boolean): Promise<void> {
+export async function runDeploy(args: string[], json: boolean): Promise<void> {
   const { dir } = parseDirOption(args, "deploy");
   const api = await getApiContext();
   const config = await readProjectConfig(process.cwd());
@@ -380,7 +380,7 @@ async function runDeploy(args: string[], json: boolean): Promise<void> {
   }
 }
 
-async function runStatus(args: string[], json: boolean): Promise<void> {
+export async function runStatus(args: string[], json: boolean): Promise<void> {
   if (args.length > 0) {
     throw new CliError("Usage: capy-app-dev status", {
       code: "INVALID_USAGE",
