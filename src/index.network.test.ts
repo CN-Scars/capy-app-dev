@@ -3,8 +3,8 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 
 import {
   ApiError,
-  CliError,
   apiRequest,
+  CliError,
   getApiContext,
   resetSandboxIdentityCache,
   resolveSandboxIdentity,

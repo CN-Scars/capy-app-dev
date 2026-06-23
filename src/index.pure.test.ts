@@ -44,12 +44,15 @@ describe("parseDirOption", () => {
   });
 
   it("throws INVALID_USAGE (exit 2) on garbage", () => {
-    assert.throws(() => parseDirOption(["nonsense"], "deploy"), (err: unknown) => {
-      assert.ok(err instanceof CliError);
-      assert.equal(err.code, "INVALID_USAGE");
-      assert.equal(err.exitCode, 2);
-      return true;
-    });
+    assert.throws(
+      () => parseDirOption(["nonsense"], "deploy"),
+      (err: unknown) => {
+        assert.ok(err instanceof CliError);
+        assert.equal(err.code, "INVALID_USAGE");
+        assert.equal(err.exitCode, 2);
+        return true;
+      },
+    );
   });
 });
 
@@ -64,7 +67,10 @@ describe("validateAppName", () => {
   });
 
   it("rejects bad characters and bad edges", () => {
-    assert.throws(() => validateAppName("My-App"), (e: unknown) => e instanceof CliError && e.code === "INVALID_APP_NAME");
+    assert.throws(
+      () => validateAppName("My-App"),
+      (e: unknown) => e instanceof CliError && e.code === "INVALID_APP_NAME",
+    );
     assert.throws(() => validateAppName("-leading"), /INVALID_APP_NAME|lowercase/);
     assert.throws(() => validateAppName("trailing-"), /lowercase|start and end/);
   });
@@ -79,7 +85,10 @@ describe("resolveInsideRoot (path traversal guard)", () => {
   const root = "/tmp/build";
 
   it("resolves a child path", () => {
-    assert.equal(resolveInsideRoot(root, "server/index.js", "x"), path.resolve(root, "server/index.js"));
+    assert.equal(
+      resolveInsideRoot(root, "server/index.js", "x"),
+      path.resolve(root, "server/index.js"),
+    );
   });
 
   it("allows the root itself", () => {
@@ -87,15 +96,21 @@ describe("resolveInsideRoot (path traversal guard)", () => {
   });
 
   it("rejects escaping the root with ..", () => {
-    assert.throws(() => resolveInsideRoot(root, "../secrets", "deploy artifact"), (e: unknown) => {
-      assert.ok(e instanceof CliError);
-      assert.equal(e.code, "INVALID_DEPLOY_PATH");
-      return true;
-    });
+    assert.throws(
+      () => resolveInsideRoot(root, "../secrets", "deploy artifact"),
+      (e: unknown) => {
+        assert.ok(e instanceof CliError);
+        assert.equal(e.code, "INVALID_DEPLOY_PATH");
+        return true;
+      },
+    );
   });
 
   it("rejects an absolute path outside the root", () => {
-    assert.throws(() => resolveInsideRoot(root, "/etc/passwd", "x"), /INVALID_DEPLOY_PATH|must stay within/);
+    assert.throws(
+      () => resolveInsideRoot(root, "/etc/passwd", "x"),
+      /INVALID_DEPLOY_PATH|must stay within/,
+    );
   });
 });
 

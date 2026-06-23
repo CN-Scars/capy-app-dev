@@ -1,10 +1,20 @@
 import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const CONFIG_FILE_NAME = ".capy-app.json";
@@ -176,7 +186,7 @@ async function main(): Promise<void> {
 
 async function runCreate(args: string[], json: boolean): Promise<void> {
   if (args.length !== 1) {
-    throw new CliError('Usage: capy-app-dev create <app-name>', {
+    throw new CliError("Usage: capy-app-dev create <app-name>", {
       code: "INVALID_USAGE",
       exitCode: 2,
     });
@@ -261,7 +271,10 @@ async function runInit(args: string[], json: boolean): Promise<void> {
     await mkdir(targetDir, { recursive: true });
 
     for (const relativePath of sourceEntries) {
-      if (relativePath === CONFIG_FILE_NAME && (await pathExists(path.join(targetDir, relativePath)))) {
+      if (
+        relativePath === CONFIG_FILE_NAME &&
+        (await pathExists(path.join(targetDir, relativePath)))
+      ) {
         continue;
       }
 
@@ -365,7 +378,7 @@ async function runDeploy(args: string[], json: boolean): Promise<void> {
 
 async function runStatus(args: string[], json: boolean): Promise<void> {
   if (args.length > 0) {
-    throw new CliError('Usage: capy-app-dev status', {
+    throw new CliError("Usage: capy-app-dev status", {
       code: "INVALID_USAGE",
       exitCode: 2,
     });
@@ -393,9 +406,7 @@ async function runStatus(args: string[], json: boolean): Promise<void> {
   process.stdout.write(`App: ${response.app.appName}\n`);
   process.stdout.write(`URL: ${response.app.url}\n`);
   process.stdout.write(`Created: ${response.app.createdAt}\n`);
-  process.stdout.write(
-    `Last deployed: ${response.app.deployment?.deployedAt ?? "never"}\n`,
-  );
+  process.stdout.write(`Last deployed: ${response.app.deployment?.deployedAt ?? "never"}\n`);
   if (response.app.deployment) {
     process.stdout.write(`Version: ${response.app.deployment.version}\n`);
   }
@@ -566,9 +577,10 @@ export async function apiRequest<T>(
   const payload = parseJson(rawText);
 
   if (!response.ok) {
-    const errorCode = isRecord(payload) && isRecord(payload.error) && typeof payload.error.code === "string"
-      ? payload.error.code
-      : `HTTP_${response.status}`;
+    const errorCode =
+      isRecord(payload) && isRecord(payload.error) && typeof payload.error.code === "string"
+        ? payload.error.code
+        : `HTTP_${response.status}`;
     const errorMessage = readApiErrorMessage(payload, response.status);
     throw new ApiError(response.status, errorCode, errorMessage);
   }
@@ -596,11 +608,7 @@ async function readProjectConfig(cwd: string): Promise<ProjectConfig> {
   }
 
   const config = parseJson(rawConfig);
-  if (
-    !isRecord(config) ||
-    typeof config.appName !== "string" ||
-    typeof config.url !== "string"
-  ) {
+  if (!isRecord(config) || typeof config.appName !== "string" || typeof config.url !== "string") {
     throw new CliError(`${CONFIG_FILE_NAME} is invalid`, {
       code: "INVALID_PROJECT_CONFIG",
     });
@@ -689,10 +697,9 @@ async function createDeployArchive(buildDir: string): Promise<DeployPackageResul
   try {
     await execFileAsync("tar", ["-czf", archivePath, "-C", stageDir, "."]);
   } catch (error) {
-    throw new CliError(
-      error instanceof Error ? error.message : "Failed to create deploy archive",
-      { code: "ARCHIVE_CREATE_FAILED" },
-    );
+    throw new CliError(error instanceof Error ? error.message : "Failed to create deploy archive", {
+      code: "ARCHIVE_CREATE_FAILED",
+    });
   }
 
   return {
@@ -807,10 +814,9 @@ async function resolveDefaultScaffoldSource(): Promise<ScaffoldSource> {
   if (configuredPath) {
     const root = path.resolve(configuredPath);
     if (!(await pathExists(root))) {
-      throw new CliError(
-        `${DEFAULT_SCAFFOLD_PATH_ENV} points to a missing directory: ${root}`,
-        { code: "SCAFFOLD_NOT_FOUND" },
-      );
+      throw new CliError(`${DEFAULT_SCAFFOLD_PATH_ENV} points to a missing directory: ${root}`, {
+        code: "SCAFFOLD_NOT_FOUND",
+      });
     }
 
     return {
@@ -1026,9 +1032,10 @@ function writeJson(value: unknown): void {
 }
 
 function handleError(error: unknown, json: boolean): never {
-  const cliError = error instanceof CliError
-    ? error
-    : new CliError(error instanceof Error ? error.message : "Unknown error");
+  const cliError =
+    error instanceof CliError
+      ? error
+      : new CliError(error instanceof Error ? error.message : "Unknown error");
 
   if (json) {
     process.stderr.write(
