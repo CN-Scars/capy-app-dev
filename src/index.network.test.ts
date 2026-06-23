@@ -132,6 +132,26 @@ describe("apiRequest", () => {
       (err: unknown) => err instanceof CliError && err.code === "INVALID_API_RESPONSE",
     );
   });
+
+  it("returns a legitimate null body instead of treating it as invalid (Bug 3)", async () => {
+    // A 2xx response whose JSON body is literally `null` must be returned as
+    // null, not misclassified as a parse failure.
+    stubFetch(
+      () => new Response("null", { status: 200, headers: { "content-type": "application/json" } }),
+    );
+
+    const result = await apiRequest<null>(api, { method: "GET", pathname: "/api/apps/demo" });
+    assert.equal(result, null);
+  });
+
+  it("still rejects an empty (unparseable) 2xx body as INVALID_API_RESPONSE", async () => {
+    stubFetch(() => new Response("", { status: 200 }));
+
+    await assert.rejects(
+      apiRequest(api, { method: "GET", pathname: "/api/apps/demo" }),
+      (err: unknown) => err instanceof CliError && err.code === "INVALID_API_RESPONSE",
+    );
+  });
 });
 
 describe("resolveSandboxIdentity", () => {

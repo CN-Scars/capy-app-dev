@@ -542,7 +542,8 @@ export async function resolveSandboxIdentity(
   );
 
   const rawText = await response.text();
-  const payload = parseJson(rawText);
+  const parsed = parseJson(rawText);
+  const payload = parsed.ok ? parsed.value : undefined;
 
   if (!response.ok) {
     const message = readApiErrorMessage(payload, response.status);
@@ -611,7 +612,8 @@ export async function apiRequest<T>(
   );
 
   const rawText = await response.text();
-  const payload = parseJson(rawText);
+  const parsed = parseJson(rawText);
+  const payload = parsed.ok ? parsed.value : undefined;
 
   if (!response.ok) {
     const errorCode =
@@ -622,13 +624,15 @@ export async function apiRequest<T>(
     throw new ApiError(response.status, errorCode, errorMessage);
   }
 
-  if (!payload) {
+  // Distinguish a JSON parse failure from a legitimately parsed `null` body:
+  // only the former is an invalid response.
+  if (!parsed.ok) {
     throw new CliError(`API returned invalid JSON for ${url.pathname}`, {
       code: "INVALID_API_RESPONSE",
     });
   }
 
-  return payload as T;
+  return parsed.value as T;
 }
 
 async function readProjectConfig(cwd: string): Promise<ProjectConfig> {
@@ -644,7 +648,8 @@ async function readProjectConfig(cwd: string): Promise<ProjectConfig> {
     );
   }
 
-  const config = parseJson(rawConfig);
+  const parsedConfig = parseJson(rawConfig);
+  const config = parsedConfig.ok ? parsedConfig.value : undefined;
   if (!isRecord(config) || typeof config.appName !== "string" || typeof config.url !== "string") {
     throw new CliError(`${CONFIG_FILE_NAME} is invalid`, {
       code: "INVALID_PROJECT_CONFIG",
@@ -677,7 +682,8 @@ async function createDeployArchive(buildDir: string): Promise<DeployPackageResul
     );
   }
 
-  const manifest = parseJson(rawManifest);
+  const parsedManifest = parseJson(rawManifest);
+  const manifest = parsedManifest.ok ? parsedManifest.value : undefined;
   if (!isDeployManifest(manifest)) {
     throw new CliError("deploy.json is invalid", {
       code: "INVALID_DEPLOY_MANIFEST",
@@ -1001,11 +1007,18 @@ export function isSandboxIdentityResponse(value: unknown): value is SandboxIdent
   return true;
 }
 
-export function parseJson(rawValue: string): unknown {
+/**
+ * Result of `parseJson`. A discriminated union so a successfully parsed `null`
+ * body (`{ ok: true, value: null }`) is distinguishable from a parse failure
+ * (`{ ok: false }`) — previously both collapsed to `null`.
+ */
+export type JsonParseResult = { ok: true; value: unknown } | { ok: false };
+
+export function parseJson(rawValue: string): JsonParseResult {
   try {
-    return JSON.parse(rawValue) as unknown;
+    return { ok: true, value: JSON.parse(rawValue) as unknown };
   } catch {
-    return null;
+    return { ok: false };
   }
 }
 
