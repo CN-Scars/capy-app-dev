@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { cp, lstat, mkdir, readdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { SCAFFOLD_IGNORE_NAMES } from "./constants.ts";
@@ -117,6 +117,49 @@ export async function copyRelativePath(
 
   const destinationPath = path.join(destinationRoot, normalized);
   await mkdir(path.dirname(destinationPath), { recursive: true });
-  await cp(sourcePath, destinationPath, { recursive: true });
+  await copyTreeNoSymlinks(sourcePath, destinationPath, normalized);
   copied.add(normalized);
+}
+
+/**
+ * Recursively copy a file or directory, rejecting any symbolic link found along
+ * the way. Deploy artifacts are normal files; a symlink is anomalous and could
+ * escape the build root (its lexical path passes resolveInsideRoot while its
+ * target points elsewhere), so refuse it loudly instead of packaging it.
+ */
+async function copyTreeNoSymlinks(
+  source: string,
+  destination: string,
+  label: string,
+): Promise<void> {
+  const stats = await lstat(source);
+
+  if (stats.isSymbolicLink()) {
+    throw new CliError(`Deploy artifact must not be a symlink: ${label}`, {
+      code: "SYMLINK_NOT_ALLOWED",
+    });
+  }
+
+  if (stats.isDirectory()) {
+    await mkdir(destination, { recursive: true });
+    const entries = await readdir(source);
+    for (const entry of entries) {
+      await copyTreeNoSymlinks(
+        path.join(source, entry),
+        path.join(destination, entry),
+        `${label}/${entry}`,
+      );
+    }
+    return;
+  }
+
+  if (stats.isFile()) {
+    await mkdir(path.dirname(destination), { recursive: true });
+    await copyFile(source, destination);
+    return;
+  }
+
+  throw new CliError(`Deploy artifact is not a regular file or directory: ${label}`, {
+    code: "INVALID_DEPLOY_ARTIFACT",
+  });
 }

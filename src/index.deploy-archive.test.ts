@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -76,6 +76,81 @@ describe("createDeployArchive temp-dir lifecycle (H2)", () => {
       assert.ok(existsSync(result.tempRoot), "tempRoot should exist after a successful call");
       assert.ok(existsSync(result.archivePath), "archive should exist inside tempRoot");
       assert.equal(result.workerEntry, "server/index.js");
+    } finally {
+      rmSync(result.tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * Regression tests for the symlink-escape fix (audit M3). A symlink inside the
+ * build dir passes the lexical resolveInsideRoot guard but its target may point
+ * outside; createDeployArchive must reject it (policy A) rather than package it.
+ */
+describe("createDeployArchive rejects symlinks (M3)", () => {
+  let buildDir = "";
+  let outsideDir = "";
+
+  beforeEach(() => {
+    buildDir = mkdtempSync(path.join(tmpdir(), "m3-build-"));
+    outsideDir = mkdtempSync(path.join(tmpdir(), "m3-outside-"));
+    writeFileSync(path.join(outsideDir, "secret.txt"), "external secret\n");
+  });
+
+  afterEach(() => {
+    rmSync(buildDir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it("rejects a top-level artifact that is a symlink to outside the build dir", async () => {
+    await mkdir(path.join(buildDir, "server"), { recursive: true });
+    // server/index.js -> external secret.txt (escapes the build root)
+    symlinkSync(path.join(outsideDir, "secret.txt"), path.join(buildDir, "server", "index.js"));
+    await writeFile(
+      path.join(buildDir, "deploy.json"),
+      JSON.stringify({ worker: { entry: "server/index.js" } }),
+    );
+
+    await assert.rejects(createDeployArchive(buildDir), (err: unknown) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.code, "SYMLINK_NOT_ALLOWED");
+      return true;
+    });
+  });
+
+  it("rejects a symlink nested inside the assets directory", async () => {
+    await mkdir(path.join(buildDir, "client"), { recursive: true });
+    await writeFile(path.join(buildDir, "client", "index.html"), "<!doctype html>");
+    // a symlink hidden inside the assets dir
+    symlinkSync(path.join(outsideDir, "secret.txt"), path.join(buildDir, "client", "leak.txt"));
+    await writeFile(
+      path.join(buildDir, "deploy.json"),
+      JSON.stringify({ assets: { directory: "client" } }),
+    );
+
+    await assert.rejects(createDeployArchive(buildDir), (err: unknown) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.code, "SYMLINK_NOT_ALLOWED");
+      return true;
+    });
+  });
+
+  it("still packages a normal, symlink-free build", async () => {
+    await mkdir(path.join(buildDir, "server"), { recursive: true });
+    await mkdir(path.join(buildDir, "client"), { recursive: true });
+    await writeFile(path.join(buildDir, "server", "index.js"), "export default {};\n");
+    await writeFile(path.join(buildDir, "client", "index.html"), "<!doctype html>");
+    await writeFile(
+      path.join(buildDir, "deploy.json"),
+      JSON.stringify({ worker: { entry: "server/index.js" }, assets: { directory: "client" } }),
+    );
+
+    const result = await createDeployArchive(buildDir);
+    try {
+      assert.ok(existsSync(result.archivePath));
+      assert.equal(result.workerEntry, "server/index.js");
+      assert.equal(result.assetsDirectory, "client");
+      assert.equal(result.assetsCount, 1);
     } finally {
       rmSync(result.tempRoot, { recursive: true, force: true });
     }
