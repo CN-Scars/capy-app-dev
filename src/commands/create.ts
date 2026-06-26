@@ -4,6 +4,7 @@ import { apiRequest, getApiContext } from "../api.ts";
 import { CONFIG_FILE_NAME } from "../constants.ts";
 import { CliError } from "../errors.ts";
 import { pathExists, writeJsonFile } from "../fs-utils.ts";
+import { isCreateAppResponse } from "../guards.ts";
 import { writeJson } from "../json.ts";
 import type { CreateAppResponse, ProjectConfig } from "../types.ts";
 import { validateAppName } from "../validation.ts";
@@ -41,6 +42,12 @@ export async function runCreate(args: string[], json: boolean): Promise<void> {
       userId: api.userId,
     },
   });
+
+  if (!isCreateAppResponse(response)) {
+    throw new CliError("Unexpected response from create API", {
+      code: "INVALID_API_RESPONSE",
+    });
+  }
 
   const config: ProjectConfig = {
     appName: response.app.appName,

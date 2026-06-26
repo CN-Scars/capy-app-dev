@@ -1,6 +1,7 @@
 import { apiRequest, getApiContext } from "../api.ts";
 import { readProjectConfig } from "../config.ts";
 import { CliError } from "../errors.ts";
+import { isAppStatusResponse } from "../guards.ts";
 import { writeJson } from "../json.ts";
 import type { AppStatusResponse } from "../types.ts";
 
@@ -18,6 +19,12 @@ export async function runStatus(args: string[], json: boolean): Promise<void> {
     method: "GET",
     pathname: `/api/apps/${encodeURIComponent(config.appName)}`,
   });
+
+  if (!isAppStatusResponse(response)) {
+    throw new CliError("Unexpected response from status API", {
+      code: "INVALID_API_RESPONSE",
+    });
+  }
 
   if (json) {
     writeJson({

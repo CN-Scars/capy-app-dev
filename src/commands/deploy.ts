@@ -5,6 +5,8 @@ import { apiRequest, getApiContext } from "../api.ts";
 import { parseDirOption } from "../args.ts";
 import { readProjectConfig } from "../config.ts";
 import { createDeployArchive } from "../deploy-archive.ts";
+import { CliError } from "../errors.ts";
+import { isDeployResponse } from "../guards.ts";
 import { writeJson } from "../json.ts";
 import type { DeployResponse } from "../types.ts";
 
@@ -54,6 +56,12 @@ export async function runDeploy(args: string[], json: boolean): Promise<void> {
       pathname: `/api/apps/${encodeURIComponent(config.appName)}/deploy`,
       body: formData,
     });
+
+    if (!isDeployResponse(response)) {
+      throw new CliError("Unexpected response from deploy API", {
+        code: "INVALID_API_RESPONSE",
+      });
+    }
 
     if (json) {
       writeJson({
