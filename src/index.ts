@@ -27,7 +27,14 @@ export { getFirstConfiguredEnvValue, readPackageVersion } from "./env.ts";
 // importing every symbol from "./index.ts" after the split into modules.
 export { ApiError, CliError } from "./errors.ts";
 export { normalizeRelativePath, resolveInsideRoot } from "./fs-utils.ts";
-export { isDeployManifest, isRecord, isSandboxIdentityResponse } from "./guards.ts";
+export {
+  isAppStatusResponse,
+  isCreateAppResponse,
+  isDeployManifest,
+  isDeployResponse,
+  isRecord,
+  isSandboxIdentityResponse,
+} from "./guards.ts";
 export { parseJson, readApiErrorMessage } from "./json.ts";
 export type { JsonParseResult } from "./types.ts";
 export { validateAppName } from "./validation.ts";

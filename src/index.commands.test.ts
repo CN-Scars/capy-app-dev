@@ -103,7 +103,13 @@ describe("runStatus", () => {
           appName: "demo-app",
           url: "https://demo-app.example",
           createdAt: "2026-01-01",
-          deployment: { deployedAt: "2026-02-02", version: "v3" },
+          deployment: {
+            appName: "demo-app",
+            url: "https://demo-app.example",
+            version: "v3",
+            assetsCount: 2,
+            deployedAt: "2026-02-02",
+          },
           database: null,
         },
       }),
@@ -144,6 +150,22 @@ describe("runStatus", () => {
       assert.ok(err instanceof CliError);
       assert.equal(err.code, "INVALID_USAGE");
       assert.equal(err.exitCode, 2);
+      return true;
+    });
+  });
+
+  it("throws INVALID_API_RESPONSE (not a raw TypeError) on a malformed 2xx body (Bug H1)", async () => {
+    await writeConfig("demo-app");
+    // A legitimate 200 whose body is missing `app` — previously this crashed with
+    // `TypeError: Cannot read properties of undefined (reading 'appName')`.
+    stubFetch(() => jsonResponse({ success: true }));
+
+    await assert.rejects(runStatus([], false), (err: unknown) => {
+      assert.ok(
+        err instanceof CliError,
+        `expected CliError, got ${(err as Error)?.constructor?.name}`,
+      );
+      assert.equal(err.code, "INVALID_API_RESPONSE");
       return true;
     });
   });

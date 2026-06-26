@@ -7,7 +7,10 @@ import {
   extractJsonFlag,
   getFirstConfiguredEnvValue,
   hasHelpFlag,
+  isAppStatusResponse,
+  isCreateAppResponse,
   isDeployManifest,
+  isDeployResponse,
   isRecord,
   isSandboxIdentityResponse,
   normalizeRelativePath,
@@ -242,5 +245,106 @@ describe("readPackageVersion", () => {
     // never the "unknown" fallback.
     assert.notEqual(version, "unknown");
     assert.match(version, /^\d+\.\d+\.\d+/);
+  });
+});
+
+describe("isCreateAppResponse", () => {
+  it("accepts a valid create response", () => {
+    assert.equal(
+      isCreateAppResponse({
+        success: true,
+        app: { appName: "demo", url: "https://demo.samdy.run", createdAt: "2026-01-01" },
+      }),
+      true,
+    );
+  });
+
+  it("rejects a 2xx body missing app or app fields (Bug H1)", () => {
+    assert.equal(isCreateAppResponse({ success: true }), false);
+    assert.equal(isCreateAppResponse({ app: { appName: "demo", url: "u" } }), false);
+    assert.equal(isCreateAppResponse(null), false);
+  });
+});
+
+describe("isDeployResponse", () => {
+  it("accepts a valid deploy response, with or without database", () => {
+    const base = {
+      appName: "demo",
+      url: "https://demo.samdy.run",
+      version: "deploy-1",
+      assetsCount: 2,
+      deployedAt: "2026-01-01T00:00:00.000Z",
+    };
+    assert.equal(isDeployResponse({ success: true, deployment: base }), true);
+    assert.equal(
+      isDeployResponse({
+        success: true,
+        deployment: { ...base, database: { id: "d", name: "db", migrationsApplied: 2 } },
+      }),
+      true,
+    );
+  });
+
+  it("rejects missing deployment or missing deployment fields (Bug H1)", () => {
+    assert.equal(isDeployResponse({ success: true }), false);
+    assert.equal(isDeployResponse({ deployment: { url: "u" } }), false);
+    assert.equal(
+      isDeployResponse({
+        deployment: {
+          appName: "demo",
+          url: "u",
+          version: "v",
+          assetsCount: 1,
+          deployedAt: "t",
+          database: { id: "d", name: "db" /* missing migrationsApplied */ },
+        },
+      }),
+      false,
+    );
+  });
+});
+
+describe("isAppStatusResponse", () => {
+  it("accepts a valid status response with null deployment/database", () => {
+    assert.equal(
+      isAppStatusResponse({
+        success: true,
+        app: {
+          appName: "demo",
+          url: "https://demo.samdy.run",
+          createdAt: "2026-01-01",
+          deployment: null,
+          database: null,
+        },
+      }),
+      true,
+    );
+  });
+
+  it("accepts a populated deployment and database", () => {
+    assert.equal(
+      isAppStatusResponse({
+        app: {
+          appName: "demo",
+          url: "https://demo.samdy.run",
+          createdAt: "2026-01-01",
+          deployment: {
+            appName: "demo",
+            url: "https://demo.samdy.run",
+            version: "v1",
+            assetsCount: 3,
+            deployedAt: "2026-01-02",
+          },
+          database: { id: "d", name: "db" },
+        },
+      }),
+      true,
+    );
+  });
+
+  it("rejects missing app or app fields (Bug H1)", () => {
+    assert.equal(isAppStatusResponse({ success: true }), false);
+    assert.equal(isAppStatusResponse({ app: { appName: "demo" } }), false);
+    assert.equal(isAppStatusResponse(null), false);
   });
 });
