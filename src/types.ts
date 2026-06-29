@@ -71,6 +71,26 @@ export interface SandboxIdentity {
   token: string;
 }
 
+/**
+ * A Cloudflare `plain_text` binding — the metadata shape the platform's deploy
+ * backend forwards to the Workers API to expose a plain (non-secret) env var to
+ * the user worker at runtime (`env.<name>`).
+ */
+export interface PlainTextBinding {
+  type: "plain_text";
+  name: string;
+  text: string;
+}
+
+/**
+ * The `config` field uploaded alongside the deploy archive. The backend reads
+ * `config.bindings` and merges it into the worker's deploy metadata. Only the
+ * fields the CLI produces are modeled here.
+ */
+export interface DeployConfig {
+  bindings: PlainTextBinding[];
+}
+
 export interface DeployManifest {
   worker?: {
     entry: string;

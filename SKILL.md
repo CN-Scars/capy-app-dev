@@ -69,9 +69,10 @@ object to `.capy-app.json` (string keys and string values only):
 }
 ```
 
-On `deploy`, every entry under `env` is uploaded for the platform to inject into
-the worker as a plain Cloudflare `var`. The worker reads them via `env.APP_TITLE`
-(Hono: `c.env.APP_TITLE`). Redeploy always re-sends the current `env`.
+On `deploy`, each entry under `env` is converted into a Cloudflare `plain_text`
+binding and sent in the deploy `config`, so the platform exposes it to the
+worker at runtime. The worker reads them via `env.APP_TITLE` (Hono:
+`c.env.APP_TITLE`). Redeploy always re-sends the current `env`.
 
 These are **plain text** (visible in the Cloudflare dashboard) — use them for
 non-sensitive config only. Do not put secrets (API keys, tokens) here. Values

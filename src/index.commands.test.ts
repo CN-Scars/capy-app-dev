@@ -313,7 +313,7 @@ describe("runDeploy", () => {
       },
     });
 
-  it("uploads an `env` FormData field that round-trips the config env object", async () => {
+  it("uploads env vars as plain_text bindings in the `config` field", async () => {
     await writeConfigWithEnv("demo-app", { APP_TITLE: "Hello", MODE: "production" });
     await stageDist();
     stubFetch(deployOkResponse);
@@ -322,15 +322,19 @@ describe("runDeploy", () => {
 
     const body = calls[0].init?.body;
     assert.ok(body instanceof FormData, "deploy uploads multipart FormData");
-    const envField = body.get("env");
-    assert.equal(typeof envField, "string", "env must be a serialized string field");
-    assert.deepEqual(JSON.parse(envField as string), {
-      APP_TITLE: "Hello",
-      MODE: "production",
+    const configField = body.get("config");
+    assert.equal(typeof configField, "string", "config must be a serialized string field");
+    assert.deepEqual(JSON.parse(configField as string), {
+      bindings: [
+        { type: "plain_text", name: "APP_TITLE", text: "Hello" },
+        { type: "plain_text", name: "MODE", text: "production" },
+      ],
     });
+    // The legacy standalone `env` field must not be sent (backend ignores it).
+    assert.equal(body.get("env"), null, "must not send a standalone env field");
   });
 
-  it("omits the `env` field entirely when the config has no env", async () => {
+  it("omits the `config` field entirely when the project config has no env", async () => {
     await writeConfig("demo-app");
     await stageDist();
     stubFetch(deployOkResponse);
@@ -338,10 +342,10 @@ describe("runDeploy", () => {
     await capture(() => runDeploy([], false));
 
     const body = calls[0].init?.body as FormData;
-    assert.equal(body.get("env"), null, "no env field when config has none");
+    assert.equal(body.get("config"), null, "no config field when there is no env");
   });
 
-  it("omits the `env` field when env is present but empty", async () => {
+  it("omits the `config` field when env is present but empty", async () => {
     await writeConfigWithEnv("demo-app", {});
     await stageDist();
     stubFetch(deployOkResponse);
@@ -349,7 +353,7 @@ describe("runDeploy", () => {
     await capture(() => runDeploy([], false));
 
     const body = calls[0].init?.body as FormData;
-    assert.equal(body.get("env"), null, "no env field for an empty env object");
+    assert.equal(body.get("config"), null, "no config field for an empty env object");
   });
 
   it("rejects a non-string env value with INVALID_PROJECT_CONFIG before deploying", async () => {

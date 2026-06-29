@@ -19,7 +19,7 @@ export {
 } from "./api.ts";
 export { extractJsonFlag, hasHelpFlag, parseDirOption } from "./args.ts";
 export { runCreate } from "./commands/create.ts";
-export { runDeploy } from "./commands/deploy.ts";
+export { buildDeployConfig, runDeploy } from "./commands/deploy.ts";
 export { runInit } from "./commands/init.ts";
 export { runStatus } from "./commands/status.ts";
 export { getFirstConfiguredEnvValue, readPackageVersion } from "./env.ts";

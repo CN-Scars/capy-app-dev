@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
+  buildDeployConfig,
   CliError,
   extractJsonFlag,
   getFirstConfiguredEnvValue,
@@ -106,6 +107,33 @@ describe("validateAppName", () => {
   it("rejects reserved subdomains", () => {
     assert.throws(() => validateAppName("api"), /reserved/);
     assert.throws(() => validateAppName("www"), /reserved/);
+  });
+});
+
+describe("buildDeployConfig", () => {
+  it("returns null for undefined env", () => {
+    assert.equal(buildDeployConfig(undefined), null);
+  });
+
+  it("returns null for an empty env object", () => {
+    assert.equal(buildDeployConfig({}), null);
+  });
+
+  it("maps each env entry to a plain_text binding, preserving order", () => {
+    const result = buildDeployConfig({ APP_TITLE: "Hello", MODE: "production" });
+    assert.deepEqual(result, {
+      bindings: [
+        { type: "plain_text", name: "APP_TITLE", text: "Hello" },
+        { type: "plain_text", name: "MODE", text: "production" },
+      ],
+    });
+  });
+
+  it("preserves empty-string values (a valid plain_text value)", () => {
+    const result = buildDeployConfig({ EMPTY: "" });
+    assert.deepEqual(result, {
+      bindings: [{ type: "plain_text", name: "EMPTY", text: "" }],
+    });
   });
 });
 
