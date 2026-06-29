@@ -51,6 +51,13 @@ export async function runDeploy(args: string[], json: boolean): Promise<void> {
       }),
     );
 
+    // Plain env vars (if any) ride as a separate JSON field — not inside the
+    // archive — for the backend to inject as worker `vars`. Validated in
+    // readProjectConfig; only send when at least one key is present.
+    if (config.env && Object.keys(config.env).length > 0) {
+      formData.set("env", JSON.stringify(config.env));
+    }
+
     const response = await apiRequest<DeployResponse>(api, {
       method: "POST",
       pathname: `/api/apps/${encodeURIComponent(config.appName)}/deploy`,

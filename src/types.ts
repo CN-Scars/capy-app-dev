@@ -2,6 +2,12 @@ export interface ProjectConfig {
   appName: string;
   url: string;
   createdAt?: string;
+  /**
+   * Plain (non-secret) environment variables to inject into the deployed worker
+   * as Cloudflare `vars`. String values only — CF worker `vars` are strings, and
+   * these are plain text (visible in the dashboard), so secrets must NOT go here.
+   */
+  env?: Record<string, string>;
 }
 
 export interface DeploymentInfo {
