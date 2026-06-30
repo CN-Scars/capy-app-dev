@@ -53,6 +53,32 @@ node dist/index.js create <app-name>
 
 This writes `.capy-app.json` in the current directory.
 
+#### Passing plain environment variables to the worker
+
+To expose runtime configuration to the deployed worker, add an optional `env`
+object to `.capy-app.json` (string keys and string values only):
+
+```json
+{
+  "appName": "my-app",
+  "url": "https://my-app.happycapy.host",
+  "env": {
+    "APP_TITLE": "My App",
+    "MODE": "production"
+  }
+}
+```
+
+On `deploy`, each entry under `env` is converted into a Cloudflare `plain_text`
+binding and sent in the deploy `config`, so the platform exposes it to the
+worker at runtime. The worker reads them via `env.APP_TITLE` (Hono:
+`c.env.APP_TITLE`). Redeploy always re-sends the current `env`.
+
+These are **plain text** (visible in the Cloudflare dashboard) — use them for
+non-sensitive config only. Do not put secrets (API keys, tokens) here. Values
+must be strings; a non-string value makes `deploy` fail with
+`INVALID_PROJECT_CONFIG`.
+
 3. Initialize the default scaffold if the project has not been created yet:
 
 ```bash

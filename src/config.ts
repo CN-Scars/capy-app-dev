@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { CONFIG_FILE_NAME } from "./constants.ts";
 import { CliError } from "./errors.ts";
-import { isRecord } from "./guards.ts";
+import { isRecord, isStringRecord } from "./guards.ts";
 import { parseJson } from "./json.ts";
 import type { ProjectConfig } from "./types.ts";
 
@@ -28,9 +28,22 @@ export async function readProjectConfig(cwd: string): Promise<ProjectConfig> {
     });
   }
 
+  // Optional plain env vars for the worker. When present it must be a flat
+  // object of string values (CF `vars` are strings); reject anything else.
+  let env: Record<string, string> | undefined;
+  if (config.env !== undefined) {
+    if (!isStringRecord(config.env)) {
+      throw new CliError(`${CONFIG_FILE_NAME} "env" must be an object of string values`, {
+        code: "INVALID_PROJECT_CONFIG",
+      });
+    }
+    env = config.env;
+  }
+
   return {
     appName: config.appName,
     url: config.url,
     createdAt: typeof config.createdAt === "string" ? config.createdAt : undefined,
+    env,
   };
 }

@@ -291,6 +291,94 @@ describe("runDeploy", () => {
       (err: unknown) => err instanceof CliError && err.code === "BUILD_DIR_NOT_FOUND",
     );
   });
+
+  // ---- env vars upload (feat/deploy-env-vars) -------------------------------
+  // Write a .capy-app.json carrying an arbitrary `env` block.
+  async function writeConfigWithEnv(appName: string, env: unknown): Promise<void> {
+    await writeFile(
+      path.join(workDir, ".capy-app.json"),
+      JSON.stringify({ appName, url: `https://${appName}.example`, env }),
+    );
+  }
+
+  const deployOkResponse = () =>
+    jsonResponse({
+      success: true,
+      deployment: {
+        appName: "demo-app",
+        url: "https://demo-app.example",
+        version: "v9",
+        assetsCount: 1,
+        deployedAt: "2026-05-05",
+      },
+    });
+
+  it("uploads env vars as plain_text bindings in the `config` field", async () => {
+    await writeConfigWithEnv("demo-app", { APP_TITLE: "Hello", MODE: "production" });
+    await stageDist();
+    stubFetch(deployOkResponse);
+
+    await capture(() => runDeploy([], false));
+
+    const body = calls[0].init?.body;
+    assert.ok(body instanceof FormData, "deploy uploads multipart FormData");
+    const configField = body.get("config");
+    assert.equal(typeof configField, "string", "config must be a serialized string field");
+    assert.deepEqual(JSON.parse(configField as string), {
+      bindings: [
+        { type: "plain_text", name: "APP_TITLE", text: "Hello" },
+        { type: "plain_text", name: "MODE", text: "production" },
+      ],
+    });
+    // The legacy standalone `env` field must not be sent (backend ignores it).
+    assert.equal(body.get("env"), null, "must not send a standalone env field");
+  });
+
+  it("omits the `config` field entirely when the project config has no env", async () => {
+    await writeConfig("demo-app");
+    await stageDist();
+    stubFetch(deployOkResponse);
+
+    await capture(() => runDeploy([], false));
+
+    const body = calls[0].init?.body as FormData;
+    assert.equal(body.get("config"), null, "no config field when there is no env");
+  });
+
+  it("omits the `config` field when env is present but empty", async () => {
+    await writeConfigWithEnv("demo-app", {});
+    await stageDist();
+    stubFetch(deployOkResponse);
+
+    await capture(() => runDeploy([], false));
+
+    const body = calls[0].init?.body as FormData;
+    assert.equal(body.get("config"), null, "no config field for an empty env object");
+  });
+
+  it("rejects a non-string env value with INVALID_PROJECT_CONFIG before deploying", async () => {
+    await writeConfigWithEnv("demo-app", { COUNT: 3 });
+    await stageDist();
+    stubFetch(deployOkResponse);
+
+    await assert.rejects(
+      runDeploy([], false),
+      (err: unknown) => err instanceof CliError && err.code === "INVALID_PROJECT_CONFIG",
+    );
+    assert.equal(calls.length, 0, "must not reach the API with an invalid env");
+  });
+
+  it("rejects a non-object env (e.g. a string) with INVALID_PROJECT_CONFIG", async () => {
+    await writeConfigWithEnv("demo-app", "nope");
+    await stageDist();
+    stubFetch(deployOkResponse);
+
+    await assert.rejects(
+      runDeploy([], false),
+      (err: unknown) => err instanceof CliError && err.code === "INVALID_PROJECT_CONFIG",
+    );
+    assert.equal(calls.length, 0);
+  });
 });
 
 describe("runInit", () => {

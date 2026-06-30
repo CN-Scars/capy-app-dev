@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import {
+  buildDeployConfig,
   CliError,
   extractJsonFlag,
   getFirstConfiguredEnvValue,
@@ -13,6 +14,7 @@ import {
   isDeployResponse,
   isRecord,
   isSandboxIdentityResponse,
+  isStringRecord,
   normalizeRelativePath,
   parseDirOption,
   parseJson,
@@ -109,6 +111,33 @@ describe("validateAppName", () => {
   });
 });
 
+describe("buildDeployConfig", () => {
+  it("returns null for undefined env", () => {
+    assert.equal(buildDeployConfig(undefined), null);
+  });
+
+  it("returns null for an empty env object", () => {
+    assert.equal(buildDeployConfig({}), null);
+  });
+
+  it("maps each env entry to a plain_text binding, preserving order", () => {
+    const result = buildDeployConfig({ APP_TITLE: "Hello", MODE: "production" });
+    assert.deepEqual(result, {
+      bindings: [
+        { type: "plain_text", name: "APP_TITLE", text: "Hello" },
+        { type: "plain_text", name: "MODE", text: "production" },
+      ],
+    });
+  });
+
+  it("preserves empty-string values (a valid plain_text value)", () => {
+    const result = buildDeployConfig({ EMPTY: "" });
+    assert.deepEqual(result, {
+      bindings: [{ type: "plain_text", name: "EMPTY", text: "" }],
+    });
+  });
+});
+
 describe("resolveInsideRoot (path traversal guard)", () => {
   const root = "/tmp/build";
 
@@ -155,6 +184,27 @@ describe("isRecord", () => {
     assert.equal(isRecord([]), false);
     assert.equal(isRecord(null), false);
     assert.equal(isRecord("s"), false);
+  });
+});
+
+describe("isStringRecord", () => {
+  it("accepts a flat object whose values are all strings (incl. empty object / empty string)", () => {
+    assert.equal(isStringRecord({}), true);
+    assert.equal(isStringRecord({ A: "1", B: "" }), true);
+  });
+
+  it("rejects non-objects, arrays, and null", () => {
+    assert.equal(isStringRecord("s"), false);
+    assert.equal(isStringRecord(42), false);
+    assert.equal(isStringRecord(null), false);
+    assert.equal(isStringRecord(["a"]), false);
+  });
+
+  it("rejects an object with any non-string value", () => {
+    assert.equal(isStringRecord({ A: "1", B: 2 }), false);
+    assert.equal(isStringRecord({ A: true }), false);
+    assert.equal(isStringRecord({ A: { nested: "x" } }), false);
+    assert.equal(isStringRecord({ A: null }), false);
   });
 });
 

@@ -13,6 +13,15 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * True when `value` is a flat object whose every value is a string. Used to
+ * validate the optional `env` block in `.capy-app.json`: Cloudflare worker
+ * `vars` accept string values only.
+ */
+export function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
+}
+
 export function isDeployManifest(value: unknown): value is DeployManifest {
   if (!isRecord(value)) {
     return false;

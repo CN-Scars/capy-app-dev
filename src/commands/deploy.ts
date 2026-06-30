@@ -8,7 +8,32 @@ import { createDeployArchive } from "../deploy-archive.ts";
 import { CliError } from "../errors.ts";
 import { isDeployResponse } from "../guards.ts";
 import { writeJson } from "../json.ts";
-import type { DeployResponse } from "../types.ts";
+import type { DeployConfig, DeployResponse, PlainTextBinding } from "../types.ts";
+
+/**
+ * Translate the project's plain env vars into a deploy `config` payload. Each
+ * entry becomes a Cloudflare `plain_text` binding, which the platform forwards
+ * verbatim into the user worker's deploy metadata (so it is readable at runtime
+ * via `env.<NAME>`). Returns null when there is nothing to send, so the caller
+ * can omit the `config` field entirely and leave the request unchanged.
+ */
+export function buildDeployConfig(env: Record<string, string> | undefined): DeployConfig | null {
+  if (!env) {
+    return null;
+  }
+
+  const bindings: PlainTextBinding[] = Object.entries(env).map(([name, text]) => ({
+    type: "plain_text",
+    name,
+    text,
+  }));
+
+  if (bindings.length === 0) {
+    return null;
+  }
+
+  return { bindings };
+}
 
 export async function runDeploy(args: string[], json: boolean): Promise<void> {
   const { dir } = parseDirOption(args, "deploy");
@@ -50,6 +75,15 @@ export async function runDeploy(args: string[], json: boolean): Promise<void> {
         type: "application/gzip",
       }),
     );
+
+    // Plain env vars (if any) are translated into Cloudflare `plain_text`
+    // bindings and sent in the `config` field — the only channel the backend
+    // consumes (it forwards `config.bindings` into the worker's deploy
+    // metadata). Validated in readProjectConfig; only send when non-empty.
+    const deployConfig = buildDeployConfig(config.env);
+    if (deployConfig) {
+      formData.set("config", JSON.stringify(deployConfig));
+    }
 
     const response = await apiRequest<DeployResponse>(api, {
       method: "POST",
