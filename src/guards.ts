@@ -2,6 +2,7 @@ import type {
   AppDatabaseInfo,
   AppStatusResponse,
   CreateAppResponse,
+  DeleteResponse,
   DeployManifest,
   DeploymentDatabaseInfo,
   DeploymentInfo,
@@ -133,6 +134,10 @@ export function isCreateAppResponse(value: unknown): value is CreateAppResponse 
 
 export function isDeployResponse(value: unknown): value is DeployResponse {
   return isRecord(value) && isDeploymentInfo(value.deployment);
+}
+
+export function isDeleteResponse(value: unknown): value is DeleteResponse {
+  return isRecord(value) && typeof value.appName === "string" && typeof value.status === "string";
 }
 
 export function isAppStatusResponse(value: unknown): value is AppStatusResponse {

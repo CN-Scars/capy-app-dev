@@ -117,9 +117,23 @@ node dist/index.js status
 
 When D1 is required, prefer `node dist/index.js deploy --json` and `node dist/index.js status --json` so the agent can verify that `database.id` and `database.name` were returned.
 
+7. Delete the app (destructive — requires explicit confirmation):
+
+```bash
+node dist/index.js delete --yes
+```
+
+`delete` stops the app: it removes the deployed worker and its routing so the URL
+stops serving (the platform keeps the registry record and the app name, and
+preserves any D1 data). Because it is destructive and the CLI is non-interactive,
+it **requires `--yes`** — without it the command refuses with
+`CONFIRMATION_REQUIRED` and makes no network call. Only run `delete` when the user
+has clearly asked to delete/remove the app. `.capy-app.json` is left in place;
+remove it manually if the link is no longer needed.
+
 ## Machine-readable output
 
-Append `--json` to `create`, `init`, `deploy`, or `status` when an agent needs structured output.
+Append `--json` to `create`, `init`, `deploy`, `status`, or `delete` when an agent needs structured output.
 
 ## Notes
 

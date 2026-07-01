@@ -8,6 +8,7 @@ Usage:
   capy-app-dev init [--dir <path>] [--json]
   capy-app-dev deploy [--dir <path>] [--json]
   capy-app-dev status [--json]
+  capy-app-dev delete [--yes] [--json]
   capy-app-dev version
   capy-app-dev help
 

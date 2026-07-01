@@ -6,7 +6,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 
-import { ApiError, CliError, runCreate, runDeploy, runInit, runStatus } from "./index.ts";
+import {
+  ApiError,
+  CliError,
+  runCreate,
+  runDelete,
+  runDeploy,
+  runInit,
+  runStatus,
+} from "./index.ts";
 
 /**
  * Command-level (run*) integration tests. They exercise the real orchestration
@@ -177,6 +185,80 @@ describe("runStatus", () => {
       runStatus([], false),
       (err: unknown) => err instanceof CliError && err.code === "MISSING_PROJECT_CONFIG",
     );
+  });
+});
+
+describe("runDelete", () => {
+  it("refuses without --yes and makes no network call (destructive guard)", async () => {
+    await writeConfig("demo-app");
+    stubFetch(() => jsonResponse({}));
+
+    await assert.rejects(runDelete([], false), (err: unknown) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.code, "CONFIRMATION_REQUIRED");
+      assert.equal(err.exitCode, 2);
+      return true;
+    });
+    assert.equal(calls.length, 0, "must not hit the API without confirmation");
+  });
+
+  it("also requires --yes in --json mode (non-interactive)", async () => {
+    await writeConfig("demo-app");
+    stubFetch(() => jsonResponse({}));
+    await assert.rejects(
+      runDelete([], true),
+      (err: unknown) => err instanceof CliError && err.code === "CONFIRMATION_REQUIRED",
+    );
+    assert.equal(calls.length, 0);
+  });
+
+  it("sends DELETE and prints the result when confirmed with --yes", async () => {
+    await writeConfig("demo-app");
+    stubFetch(() => jsonResponse({ success: true, appName: "demo-app", status: "deleted" }));
+
+    const out = await capture(() => runDelete(["--yes"], false));
+
+    assert.equal(calls[0].init?.method, "DELETE");
+    assert.match(calls[0].url, /\/api\/apps\/demo-app$/);
+    assert.match(out, /Deleted app "demo-app"/);
+    assert.match(out, /status: deleted/);
+  });
+
+  it("emits a JSON envelope with --json --yes", async () => {
+    await writeConfig("demo-app");
+    stubFetch(() => jsonResponse({ success: true, appName: "demo-app", status: "deleted" }));
+
+    const out = await capture(() => runDelete(["--yes"], true));
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.appName, "demo-app");
+    assert.equal(parsed.status, "deleted");
+  });
+
+  it("passes through a 404 APP_NOT_FOUND error from the backend", async () => {
+    await writeConfig("demo-app");
+    stubFetch(() =>
+      jsonResponse(
+        { success: false, error: { code: "APP_NOT_FOUND", message: "App not found" } },
+        404,
+      ),
+    );
+
+    await assert.rejects(runDelete(["--yes"], false), (err: unknown) => {
+      assert.ok(err instanceof ApiError);
+      assert.equal(err.code, "APP_NOT_FOUND");
+      assert.equal(err.status, 404);
+      return true;
+    });
+  });
+
+  it("throws MISSING_PROJECT_CONFIG when there is no .capy-app.json", async () => {
+    stubFetch(() => jsonResponse({}));
+    await assert.rejects(
+      runDelete(["--yes"], false),
+      (err: unknown) => err instanceof CliError && err.code === "MISSING_PROJECT_CONFIG",
+    );
+    assert.equal(calls.length, 0);
   });
 });
 

@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { extractJsonFlag, hasHelpFlag } from "./args.ts";
 import { runCreate } from "./commands/create.ts";
+import { runDelete } from "./commands/delete.ts";
 import { runDeploy } from "./commands/deploy.ts";
 import { runInit } from "./commands/init.ts";
 import { runStatus } from "./commands/status.ts";
@@ -19,6 +20,7 @@ export {
 } from "./api.ts";
 export { extractJsonFlag, hasHelpFlag, parseDirOption } from "./args.ts";
 export { runCreate } from "./commands/create.ts";
+export { runDelete } from "./commands/delete.ts";
 export { buildDeployConfig, runDeploy } from "./commands/deploy.ts";
 export { runInit } from "./commands/init.ts";
 export { runStatus } from "./commands/status.ts";
@@ -74,6 +76,9 @@ async function main(): Promise<void> {
         return;
       case "status":
         await runStatus(rest, json);
+        return;
+      case "delete":
+        await runDelete(rest, json);
         return;
       default:
         throw new CliError(`Unknown command: ${command}`, { code: "INVALID_COMMAND", exitCode: 2 });
