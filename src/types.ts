@@ -57,6 +57,12 @@ export interface DeployResponse {
   deployment: DeploymentInfo;
 }
 
+export interface DeleteResponse {
+  success: true;
+  appName: string;
+  status: string;
+}
+
 export interface SandboxIdentityResponse {
   valid: boolean;
   user_id?: string;
