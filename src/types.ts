@@ -63,6 +63,21 @@ export interface DeleteResponse {
   status: string;
 }
 
+/** One entry in a `GET /api/apps` listing. */
+export interface AppSummary {
+  appName: string;
+  status: string;
+  workerName: string;
+  url: string;
+  createdAt: string;
+  lastDeployedAt?: string | null;
+  lastVersion?: string | null;
+}
+
+export interface ListAppsResponse {
+  apps: AppSummary[];
+}
+
 export interface SandboxIdentityResponse {
   valid: boolean;
   user_id?: string;
