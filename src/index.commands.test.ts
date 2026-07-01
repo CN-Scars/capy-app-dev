@@ -13,6 +13,7 @@ import {
   runDelete,
   runDeploy,
   runInit,
+  runList,
   runStatus,
 } from "./index.ts";
 
@@ -185,6 +186,128 @@ describe("runStatus", () => {
       runStatus([], false),
       (err: unknown) => err instanceof CliError && err.code === "MISSING_PROJECT_CONFIG",
     );
+  });
+});
+
+describe("runList", () => {
+  it("GETs /api/apps and prints a table for humans", async () => {
+    stubFetch(() =>
+      jsonResponse({
+        apps: [
+          {
+            appName: "alpha",
+            status: "active",
+            workerName: "alpha",
+            url: "https://alpha.example",
+            createdAt: "2026-06-01T00:00:00Z",
+            lastDeployedAt: "2026-06-05T00:00:00Z",
+            lastVersion: "v3",
+          },
+          {
+            appName: "beta",
+            status: "active",
+            workerName: "beta",
+            url: "https://beta.example",
+            createdAt: "2026-06-10T00:00:00Z",
+            lastDeployedAt: null,
+            lastVersion: null,
+          },
+        ],
+      }),
+    );
+
+    const out = await capture(() => runList([], false));
+
+    assert.equal(calls[0].init?.method, "GET");
+    assert.match(calls[0].url, /\/api\/apps$/, "must hit /api/apps with no query by default");
+    assert.doesNotMatch(calls[0].url, /all=/, "must NOT send all=1 without --all");
+    assert.match(out, /NAME/);
+    assert.match(out, /alpha/);
+    assert.match(out, /beta/);
+  });
+
+  it("sends ?all=1 when --all is passed", async () => {
+    stubFetch(() => jsonResponse({ apps: [] }));
+
+    await capture(() => runList(["--all"], false));
+
+    assert.match(calls[0].url, /\/api\/apps\?all=1$/);
+  });
+
+  it("also accepts the short -a alias", async () => {
+    stubFetch(() => jsonResponse({ apps: [] }));
+
+    await capture(() => runList(["-a"], false));
+
+    assert.match(calls[0].url, /\/api\/apps\?all=1$/);
+  });
+
+  it("emits a JSON envelope with --json", async () => {
+    stubFetch(() =>
+      jsonResponse({
+        apps: [
+          {
+            appName: "alpha",
+            status: "active",
+            workerName: "alpha",
+            url: "https://alpha.example",
+            createdAt: "2026-06-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+
+    const out = await capture(() => runList([], true));
+
+    const parsed = JSON.parse(out);
+    assert.equal(parsed.success, true);
+    assert.equal(parsed.apps.length, 1);
+    assert.equal(parsed.apps[0].appName, "alpha");
+  });
+
+  it("handles an empty list cleanly", async () => {
+    stubFetch(() => jsonResponse({ apps: [] }));
+
+    const out = await capture(() => runList([], false));
+    assert.match(out, /No active apps/);
+  });
+
+  it("rejects extra positional args with INVALID_USAGE (exit 2)", async () => {
+    stubFetch(() => jsonResponse({ apps: [] }));
+
+    await assert.rejects(runList(["extra"], false), (err: unknown) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.code, "INVALID_USAGE");
+      assert.equal(err.exitCode, 2);
+      return true;
+    });
+    assert.equal(calls.length, 0);
+  });
+
+  it("throws INVALID_API_RESPONSE on a malformed 2xx body", async () => {
+    stubFetch(() => jsonResponse({ apps: [{ appName: "no-status" }] }));
+
+    await assert.rejects(runList([], false), (err: unknown) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.code, "INVALID_API_RESPONSE");
+      return true;
+    });
+  });
+
+  it("passes backend errors through (e.g. 401 unauthorized)", async () => {
+    stubFetch(() =>
+      jsonResponse(
+        { success: false, error: { code: "UNAUTHORIZED", message: "Unauthorized" } },
+        401,
+      ),
+    );
+
+    await assert.rejects(runList([], false), (err: unknown) => {
+      assert.ok(err instanceof ApiError);
+      assert.equal(err.code, "UNAUTHORIZED");
+      assert.equal(err.status, 401);
+      return true;
+    });
   });
 });
 

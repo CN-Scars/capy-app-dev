@@ -117,7 +117,18 @@ node dist/index.js status
 
 When D1 is required, prefer `node dist/index.js deploy --json` and `node dist/index.js status --json` so the agent can verify that `database.id` and `database.name` were returned.
 
-7. Delete the app (destructive — requires explicit confirmation):
+7. List the account's apps:
+
+```bash
+node dist/index.js list          # active apps only (name, status, url, last-deployed)
+node dist/index.js list --all    # include suspended/deleted rows too
+```
+
+Useful when the user is not in a project directory or asks about apps created in
+another conversation. Ownership is scoped to the caller's account — the endpoint
+only returns apps that belong to the authenticated user/team.
+
+8. Delete the app (destructive — requires explicit confirmation):
 
 ```bash
 node dist/index.js delete --yes
@@ -133,7 +144,7 @@ remove it manually if the link is no longer needed.
 
 ## Machine-readable output
 
-Append `--json` to `create`, `init`, `deploy`, `status`, or `delete` when an agent needs structured output.
+Append `--json` to `create`, `init`, `deploy`, `status`, `list`, or `delete` when an agent needs structured output.
 
 ## Notes
 

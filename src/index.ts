@@ -6,6 +6,7 @@ import { runCreate } from "./commands/create.ts";
 import { runDelete } from "./commands/delete.ts";
 import { runDeploy } from "./commands/deploy.ts";
 import { runInit } from "./commands/init.ts";
+import { runList } from "./commands/list.ts";
 import { runStatus } from "./commands/status.ts";
 import { readPackageVersion } from "./env.ts";
 import { CliError } from "./errors.ts";
@@ -23,6 +24,7 @@ export { runCreate } from "./commands/create.ts";
 export { runDelete } from "./commands/delete.ts";
 export { buildDeployConfig, runDeploy } from "./commands/deploy.ts";
 export { runInit } from "./commands/init.ts";
+export { runList } from "./commands/list.ts";
 export { runStatus } from "./commands/status.ts";
 export { getFirstConfiguredEnvValue, readPackageVersion } from "./env.ts";
 // Public surface — re-exported so consumers (and the test suite) can keep
@@ -34,6 +36,7 @@ export {
   isCreateAppResponse,
   isDeployManifest,
   isDeployResponse,
+  isListAppsResponse,
   isRecord,
   isSandboxIdentityResponse,
   isStringRecord,
@@ -76,6 +79,9 @@ async function main(): Promise<void> {
         return;
       case "status":
         await runStatus(rest, json);
+        return;
+      case "list":
+        await runList(rest, json);
         return;
       case "delete":
         await runDelete(rest, json);

@@ -1,12 +1,14 @@
 import type {
   AppDatabaseInfo,
   AppStatusResponse,
+  AppSummary,
   CreateAppResponse,
   DeleteResponse,
   DeployManifest,
   DeploymentDatabaseInfo,
   DeploymentInfo,
   DeployResponse,
+  ListAppsResponse,
   SandboxIdentityResponse,
 } from "./types.ts";
 
@@ -138,6 +140,41 @@ export function isDeployResponse(value: unknown): value is DeployResponse {
 
 export function isDeleteResponse(value: unknown): value is DeleteResponse {
   return isRecord(value) && typeof value.appName === "string" && typeof value.status === "string";
+}
+
+/** Validates one row of a `GET /api/apps` listing. */
+function isAppSummary(value: unknown): value is AppSummary {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    typeof value.appName !== "string" ||
+    typeof value.status !== "string" ||
+    typeof value.workerName !== "string" ||
+    typeof value.url !== "string" ||
+    typeof value.createdAt !== "string"
+  ) {
+    return false;
+  }
+  if (
+    value.lastDeployedAt !== undefined &&
+    value.lastDeployedAt !== null &&
+    typeof value.lastDeployedAt !== "string"
+  ) {
+    return false;
+  }
+  if (
+    value.lastVersion !== undefined &&
+    value.lastVersion !== null &&
+    typeof value.lastVersion !== "string"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function isListAppsResponse(value: unknown): value is ListAppsResponse {
+  return isRecord(value) && Array.isArray(value.apps) && value.apps.every(isAppSummary);
 }
 
 export function isAppStatusResponse(value: unknown): value is AppStatusResponse {
