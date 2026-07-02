@@ -82,6 +82,14 @@ therefore does **not** unset it on the worker — the last value stays live. To
 change a value, set it to the new value; there is currently no supported way to
 remove a binding by omitting it.
 
+> **Agent gotcha:** removing a key from `env` and redeploying will **not**
+> delete it — the previously-deployed value keeps serving, and you'll see the
+> "old" value stick around. This is expected, not a bug. Never rely on
+> "delete the key + redeploy" to clear or reset a variable; there is no
+> unset-by-omission. To change a variable, keep its key and set the new value;
+> to blank it, set it explicitly to `""` (an empty string is still a value, not
+> a removal).
+
 These are **plain text** (visible in the Cloudflare dashboard) — use them for
 non-sensitive config only. Do not put secrets (API keys, tokens) here. Values
 must be strings; a non-string value makes `deploy` fail with
