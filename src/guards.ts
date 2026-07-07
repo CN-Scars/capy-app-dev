@@ -161,12 +161,20 @@ export function isPublishResponse(value: unknown): value is PublishResponse {
 }
 
 export function isRollbackResponse(value: unknown): value is RollbackResponse {
-  return (
-    isRecord(value) &&
-    typeof value.appName === "string" &&
-    typeof value.deployId === "string" &&
-    typeof value.url === "string"
-  );
+  if (
+    !isRecord(value) ||
+    typeof value.appName !== "string" ||
+    typeof value.deployId !== "string" ||
+    typeof value.url !== "string"
+  ) {
+    return false;
+  }
+
+  if (value.withData !== undefined && typeof value.withData !== "boolean") {
+    return false;
+  }
+
+  return true;
 }
 
 function isVersionEntry(value: unknown): value is VersionEntry {

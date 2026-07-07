@@ -1178,6 +1178,62 @@ describe("runRollback", () => {
     assert.equal(parsed.deployId, "abc123");
     assert.equal(parsed.url, "https://demo-app.example");
   });
+
+  it("--with-data --yes sends {deployId, withData: true} and prints data-restore note", async () => {
+    await writeConfig("demo-app");
+    stubFetch(() =>
+      jsonResponse({
+        success: true,
+        appName: "demo-app",
+        deployId: "abc123",
+        url: "https://demo-app.example",
+        withData: true,
+      }),
+    );
+
+    const out = await capture(() => runRollback(["abc123", "--with-data", "--yes"], false));
+
+    assert.equal(calls[0].init?.method, "POST");
+    assert.match(calls[0].url, /\/api\/apps\/demo-app\/rollback$/);
+    assert.deepEqual(JSON.parse(String(calls[0].init?.body)), {
+      deployId: "abc123",
+      withData: true,
+    });
+    assert.match(out, /Rolled back demo-app to abc123 — live at https:\/\/demo-app\.example/);
+    assert.match(out, /Note: D1 database restored to that version's snapshot\./);
+  });
+
+  it("--with-data without --yes throws CONFIRMATION_REQUIRED (exit 2), no network call", async () => {
+    await writeConfig("demo-app");
+    stubFetch(() => jsonResponse({}));
+
+    await assert.rejects(runRollback(["abc123", "--with-data"], false), (err: unknown) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.code, "CONFIRMATION_REQUIRED");
+      assert.equal(err.exitCode, 2);
+      assert.match(err.message, /destructive/);
+      return true;
+    });
+    assert.equal(calls.length, 0, "must not hit the API without confirmation");
+  });
+
+  it("normal rollback (no flags) still works as before", async () => {
+    await writeConfig("demo-app");
+    stubFetch(() =>
+      jsonResponse({
+        success: true,
+        appName: "demo-app",
+        deployId: "xyz999",
+        url: "https://demo-app.example",
+      }),
+    );
+
+    const out = await capture(() => runRollback(["xyz999"], false));
+
+    assert.deepEqual(JSON.parse(String(calls[0].init?.body)), { deployId: "xyz999" });
+    assert.match(out, /Rolled back demo-app to xyz999 — live at https:\/\/demo-app\.example/);
+    assert.doesNotMatch(out, /D1 database/);
+  });
 });
 
 describe("runVersions", () => {
