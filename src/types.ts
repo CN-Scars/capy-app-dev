@@ -72,6 +72,7 @@ export interface RollbackResponse {
   appName: string;
   deployId: string;
   url: string;
+  withData?: boolean;
 }
 
 export interface VersionEntry {

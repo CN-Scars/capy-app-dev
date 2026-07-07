@@ -7,8 +7,17 @@ import type { RollbackResponse } from "../types.ts";
 
 export async function runRollback(args: string[], json: boolean): Promise<void> {
   const positional: string[] = [];
+  let yes = false;
+  let withData = false;
+
   for (const arg of args) {
-    positional.push(arg);
+    if (arg === "--yes") {
+      yes = true;
+    } else if (arg === "--with-data") {
+      withData = true;
+    } else {
+      positional.push(arg);
+    }
   }
 
   if (positional.length === 0) {
@@ -25,14 +34,29 @@ export async function runRollback(args: string[], json: boolean): Promise<void> 
     });
   }
 
+  if (withData && !yes) {
+    throw new CliError(
+      "rollback --with-data is destructive (overwrites D1 data). Re-run with --yes to confirm.",
+      {
+        code: "CONFIRMATION_REQUIRED",
+        exitCode: 2,
+      },
+    );
+  }
+
   const deployId = positional[0];
   const config = await readProjectConfig(process.cwd());
   const api = await getApiContext();
 
+  const body: { deployId: string; withData?: true } = { deployId };
+  if (withData) {
+    body.withData = true;
+  }
+
   const response = await apiRequest<RollbackResponse>(api, {
     method: "POST",
     pathname: `/api/apps/${encodeURIComponent(config.appName)}/rollback`,
-    json: { deployId },
+    json: body,
   });
 
   if (!isRollbackResponse(response)) {
@@ -47,11 +71,18 @@ export async function runRollback(args: string[], json: boolean): Promise<void> 
       appName: response.appName,
       deployId: response.deployId,
       url: response.url,
+      withData: response.withData ?? false,
     });
     return;
   }
 
-  process.stdout.write(
-    `Rolled back ${response.appName} to ${response.deployId} — live at ${response.url}\n`,
-  );
+  if (withData) {
+    process.stdout.write(
+      `Rolled back ${response.appName} to ${response.deployId} — live at ${response.url}\nNote: D1 database restored to that version's snapshot.\n`,
+    );
+  } else {
+    process.stdout.write(
+      `Rolled back ${response.appName} to ${response.deployId} — live at ${response.url}\n`,
+    );
+  }
 }
