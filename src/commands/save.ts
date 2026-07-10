@@ -18,10 +18,119 @@ interface SaveOptions {
   message?: string;
 }
 
+/** Result of a workspace save — the recorded snapshot plus sync counts. */
+export interface SaveResult {
+  snapshotId: string;
+  fileCount: number;
+  folderCount: number;
+  uploaded: number;
+  ignored: number;
+  created: number;
+  updated: number;
+  deleted: number;
+  message: string | null;
+}
+
+/**
+ * Validate that a snapshot/deploy message is present and non-empty. The message
+ * is mandatory because it is the only human-readable handle for finding and
+ * rolling back to a version later. Returns the trimmed message or throws.
+ */
+export function requireMessage(message: string | undefined): string {
+  const trimmed = (message ?? "").trim();
+  if (trimmed === "") {
+    throw new CliError(
+      'A snapshot message is required. Pass -m "<what changed and why>" ' +
+        '(e.g. -m "add dark-mode toggle"). Empty messages make versions unfindable later.',
+      { code: "MISSING_MESSAGE", exitCode: 2 },
+    );
+  }
+  return trimmed;
+}
+
+/**
+ * Core save flow, reusable by both `save` and `deploy`: fetch the ignore list,
+ * walk `rootDir`, plan + upload missing blobs, commit a snapshot with `message`.
+ * `message` must be a non-empty string (validated by callers).
+ */
+export async function saveWorkspace(
+  api: Awaited<ReturnType<typeof getApiContext>>,
+  appName: string,
+  rootDir: string,
+  message: string,
+): Promise<SaveResult> {
+  const appPath = `/api/apps/${encodeURIComponent(appName)}/code`;
+
+  // Fetch the authoritative ignore list; fall back to the built-in on failure.
+  let patterns = FALLBACK_IGNORE;
+  try {
+    const res = await apiRequest<CodeIgnoreResponse>(api, {
+      method: "GET",
+      pathname: `${appPath}/ignore`,
+    });
+    if (isCodeIgnoreResponse(res)) {
+      patterns = [...new Set([...res.patterns, ...FALLBACK_IGNORE])];
+    }
+  } catch {
+    // Older server or transient failure — proceed with the built-in list.
+  }
+  const isIgnored = makeIgnoreMatcher(patterns);
+
+  const built = await buildManifest(rootDir, isIgnored);
+  const fileMeta = new Map<string, { absPath: string; contentType: string }>();
+  for (const e of built.entries) {
+    if (e.kind === "file") {
+      const absPath = built.hashToPath.get(e.contentHash);
+      if (absPath) fileMeta.set(e.contentHash, { absPath, contentType: e.contentType });
+    }
+  }
+
+  const plan = await apiRequest<CodeSyncPlanResponse>(api, {
+    method: "POST",
+    pathname: `${appPath}/sync`,
+    json: { manifest: built.entries },
+  });
+  if (!isCodeSyncPlanResponse(plan)) {
+    throw new CliError("Unexpected response from code/sync", { code: "INVALID_API_RESPONSE" });
+  }
+
+  let uploaded = 0;
+  for (const hash of plan.missing) {
+    const meta = fileMeta.get(hash);
+    if (!meta) continue;
+    const bytes = await readFile(meta.absPath);
+    await putBlobAt(api, `${appPath}/blobs/${hash}`, bytes, meta.contentType);
+    uploaded++;
+  }
+
+  const commit = await apiRequest<CodeSyncCommitResponse>(api, {
+    method: "POST",
+    pathname: `${appPath}/sync/commit`,
+    json: { manifest: built.entries, message },
+  });
+  if (!isCodeSyncCommitResponse(commit)) {
+    throw new CliError("Unexpected response from code/sync/commit", {
+      code: "INVALID_API_RESPONSE",
+    });
+  }
+
+  return {
+    snapshotId: commit.snapshot.id,
+    fileCount: built.fileCount,
+    folderCount: built.folderCount,
+    uploaded,
+    ignored: plan.ignored,
+    created: commit.created,
+    updated: commit.updated,
+    deleted: commit.deleted,
+    message: commit.snapshot.message,
+  };
+}
+
 /** Parse `save` flags: [--dir <path>] [-m|--message <msg>]. */
 function parseSaveArgs(args: string[]): SaveOptions {
   const usage = () =>
-    new CliError("Usage: capy-app-dev save [--dir <path>] [-m <message>] [--json]", {
+    new CliError("Usage: capy-app-dev save -m <message> [--dir <path>] [--json]", {
       code: "INVALID_USAGE",
       exitCode: 2,
     });
@@ -50,90 +159,35 @@ export async function runSave(args: string[], json: boolean): Promise<void> {
   const opts = parseSaveArgs(args);
   const rootDir = opts.dir ? path.resolve(opts.dir) : process.cwd();
 
+  // A snapshot message is mandatory: it is the only human-readable way to find
+  // and roll back to a version later. Reject empty/whitespace before any work.
+  const message = requireMessage(opts.message);
+
   const config = await readProjectConfig(rootDir);
   const api = await getApiContext();
-  const appPath = `/api/apps/${encodeURIComponent(config.appName)}/code`;
 
-  // Fetch the authoritative ignore list; fall back to the built-in on failure.
-  let patterns = FALLBACK_IGNORE;
-  try {
-    const res = await apiRequest<CodeIgnoreResponse>(api, {
-      method: "GET",
-      pathname: `${appPath}/ignore`,
-    });
-    if (isCodeIgnoreResponse(res)) {
-      patterns = [...new Set([...res.patterns, ...FALLBACK_IGNORE])];
-    }
-  } catch {
-    // Older server or transient failure — proceed with the built-in list.
-  }
-  const isIgnored = makeIgnoreMatcher(patterns);
-
-  // Walk the workspace and build the manifest.
-  const built = await buildManifest(rootDir, isIgnored);
-  // hash → { absPath, contentType } for on-demand blob upload of missing files.
-  const fileMeta = new Map<string, { absPath: string; contentType: string }>();
-  for (const e of built.entries) {
-    if (e.kind === "file") {
-      const absPath = built.hashToPath.get(e.contentHash);
-      if (absPath) fileMeta.set(e.contentHash, { absPath, contentType: e.contentType });
-    }
-  }
-
-  // Plan: which blobs does the server still need?
-  const plan = await apiRequest<CodeSyncPlanResponse>(api, {
-    method: "POST",
-    pathname: `${appPath}/sync`,
-    json: { manifest: built.entries },
-  });
-  if (!isCodeSyncPlanResponse(plan)) {
-    throw new CliError("Unexpected response from code/sync", { code: "INVALID_API_RESPONSE" });
-  }
-
-  // Upload the missing blobs.
-  let uploaded = 0;
-  for (const hash of plan.missing) {
-    const meta = fileMeta.get(hash);
-    if (!meta) continue; // ignored/absent — nothing to upload
-    const bytes = await readFile(meta.absPath);
-    await putBlobAt(api, `${appPath}/blobs/${hash}`, bytes, meta.contentType);
-    uploaded++;
-  }
-
-  // Commit: reconcile the tree to this manifest + record a snapshot.
-  const commit = await apiRequest<CodeSyncCommitResponse>(api, {
-    method: "POST",
-    pathname: `${appPath}/sync/commit`,
-    json: { manifest: built.entries, ...(opts.message ? { message: opts.message } : {}) },
-  });
-  if (!isCodeSyncCommitResponse(commit)) {
-    throw new CliError("Unexpected response from code/sync/commit", {
-      code: "INVALID_API_RESPONSE",
-    });
-  }
+  const r = await saveWorkspace(api, config.appName, rootDir, message);
 
   if (json) {
     writeJson({
       success: true,
       appName: config.appName,
-      files: built.fileCount,
-      folders: built.folderCount,
-      uploaded,
-      ignored: plan.ignored,
-      created: commit.created,
-      updated: commit.updated,
-      deleted: commit.deleted,
-      snapshot: commit.snapshot,
+      files: r.fileCount,
+      folders: r.folderCount,
+      uploaded: r.uploaded,
+      ignored: r.ignored,
+      created: r.created,
+      updated: r.updated,
+      deleted: r.deleted,
+      snapshot: { id: r.snapshotId, message: r.message },
     });
     return;
   }
 
   process.stdout.write(
-    `Saved ${built.fileCount} file(s) for ${config.appName} ` +
-      `(${uploaded} uploaded, ${plan.ignored} ignored).\n` +
-      `  created ${commit.created}, updated ${commit.updated}, deleted ${commit.deleted}\n` +
-      `  snapshot ${commit.snapshot.id}` +
-      (commit.snapshot.message ? ` — ${commit.snapshot.message}` : "") +
-      "\n",
+    `Saved ${r.fileCount} file(s) for ${config.appName} ` +
+      `(${r.uploaded} uploaded, ${r.ignored} ignored).\n` +
+      `  created ${r.created}, updated ${r.updated}, deleted ${r.deleted}\n` +
+      `  snapshot ${r.snapshotId}${r.message ? ` — ${r.message}` : ""}\n`,
   );
 }

@@ -2,13 +2,41 @@ import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { apiRequest, getApiContext } from "../api.ts";
-import { parseDirOption } from "../args.ts";
 import { readProjectConfig } from "../config.ts";
 import { createDeployArchive } from "../deploy-archive.ts";
 import { CliError } from "../errors.ts";
 import { isDeployResponse } from "../guards.ts";
 import { writeJson } from "../json.ts";
 import type { DeployConfig, DeployResponse, PlainTextBinding } from "../types.ts";
+import { requireMessage, saveWorkspace } from "./save.ts";
+
+/** Parse `deploy` flags: [--dir <buildDir>] [-m|--message <msg>]. */
+function parseDeployArgs(args: string[]): { dir?: string; message?: string } {
+  const usage = () =>
+    new CliError("Usage: capy-app-dev deploy [--dir <path>] -m <message> [--json]", {
+      code: "INVALID_USAGE",
+      exitCode: 2,
+    });
+  const opts: { dir?: string; message?: string } = {};
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "--dir" || a === "-d") {
+      opts.dir = args[++i];
+      if (opts.dir === undefined) throw usage();
+    } else if (a.startsWith("--dir=")) {
+      opts.dir = a.slice("--dir=".length);
+    } else if (a === "--message" || a === "-m") {
+      opts.message = args[++i];
+      if (opts.message === undefined) throw usage();
+    } else if (a.startsWith("--message=")) {
+      opts.message = a.slice("--message=".length);
+    } else {
+      throw usage();
+    }
+  }
+  if (opts.dir !== undefined && opts.dir.trim() === "") throw usage();
+  return opts;
+}
 
 /**
  * Translate the project's plain env vars into a deploy `config` payload. Each
@@ -36,10 +64,39 @@ export function buildDeployConfig(env: Record<string, string> | undefined): Depl
 }
 
 export async function runDeploy(args: string[], json: boolean): Promise<void> {
-  const { dir } = parseDirOption(args, "deploy");
+  const opts = parseDeployArgs(args);
+  // Deploy requires a message: it is reused as the source-snapshot message so
+  // every deployed version has a findable, describable source snapshot.
+  const message = requireMessage(opts.message);
   const api = await getApiContext();
   const config = await readProjectConfig(process.cwd());
-  const buildDir = path.resolve(process.cwd(), dir ?? "dist");
+
+  // Save the project SOURCE first (cwd, not the build dir) so this deploy is
+  // bound to an exact code snapshot. The build output (dist) is a separate
+  // artifact; source lives in the workspace root.
+  //
+  // Best-effort: source-snapshotting is an enhancement, not a gate. If the code
+  // API is unavailable (older backend, transient failure), log and continue with
+  // no snapshot binding — deploying the app must never be blocked by it. The
+  // `-m` check above is a LOCAL requirement and still hard-fails.
+  if (!json) {
+    process.stdout.write("Saving project source...\n");
+  }
+  let snapshotId: string | null = null;
+  try {
+    const save = await saveWorkspace(api, config.appName, process.cwd(), message);
+    snapshotId = save.snapshotId;
+    if (!json) {
+      process.stdout.write(`  snapshot ${save.snapshotId} (${save.fileCount} files)\n`);
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    if (!json) {
+      process.stdout.write(`  (source snapshot skipped: ${detail})\n`);
+    }
+  }
+
+  const buildDir = path.resolve(process.cwd(), opts.dir ?? "dist");
   const deployPackage = await createDeployArchive(buildDir);
 
   try {
@@ -85,6 +142,13 @@ export async function runDeploy(args: string[], json: boolean): Promise<void> {
       formData.set("config", JSON.stringify(deployConfig));
     }
 
+    // Bind this deploy to the source snapshot saved above (when one exists), so
+    // the backend can record which code produced this version
+    // (app_deployments.snapshot_id). Omitted when the save was skipped.
+    if (snapshotId) {
+      formData.set("snapshotId", snapshotId);
+    }
+
     const response = await apiRequest<DeployResponse>(api, {
       method: "POST",
       pathname: `/api/apps/${encodeURIComponent(config.appName)}/deploy`,
@@ -109,6 +173,7 @@ export async function runDeploy(args: string[], json: boolean): Promise<void> {
         previewUrl: response.previewUrl,
         deployId: response.deployId,
         published: response.published,
+        snapshotId,
       });
       return;
     }
