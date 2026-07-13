@@ -1584,14 +1584,16 @@ describe("runRestore", () => {
     assert.match(out, /Restored demo-app to snapshot asnap_1/);
   });
 
-  it("propagates a 404 for an unknown snapshot from the backend", async () => {
+  it("propagates SNAPSHOT_NOT_FOUND (404) for an unknown snapshot from the backend", async () => {
     await writeConfig("demo-app");
-    // The backend's restore endpoint returns a generic NOT_FOUND (404) for an
-    // unknown snapshot id — verified against dev. (deploy-app's snapshotId check
-    // uses SNAPSHOT_NOT_FOUND; unifying the two is a separate backend change.)
+    // The restore endpoint reports an unknown snapshot id as SNAPSHOT_NOT_FOUND
+    // (404) — the same code deploy-app uses for its snapshotId check.
     stubFetch((call) => {
       if (/\/restore$/.test(call.url)) {
-        return jsonResponse({ error: { code: "NOT_FOUND", message: "Snapshot not found." } }, 404);
+        return jsonResponse(
+          { error: { code: "SNAPSHOT_NOT_FOUND", message: "Snapshot not found." } },
+          404,
+        );
       }
       return jsonResponse({}, 404);
     });
@@ -1599,7 +1601,7 @@ describe("runRestore", () => {
     await assert.rejects(runRestore(["asnap_missing", "--yes"], false), (err: unknown) => {
       assert.ok(err instanceof ApiError);
       assert.equal(err.status, 404);
-      assert.equal(err.code, "NOT_FOUND");
+      assert.equal(err.code, "SNAPSHOT_NOT_FOUND");
       return true;
     });
   });
