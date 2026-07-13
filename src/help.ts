@@ -6,7 +6,7 @@ export function writeHelp(): void {
 Usage:
   capy-app-dev create <app-name> [--json]
   capy-app-dev init [--dir <path>] [--json]
-  capy-app-dev deploy [--dir <path>] [--json]
+  capy-app-dev deploy -m <message> [--dir <path>] [--json]
   capy-app-dev status [--json]
   capy-app-dev list [--all] [--json]
   capy-app-dev delete [--hard] [--yes] [--json]
@@ -19,7 +19,7 @@ Usage:
   capy-app-dev publish [deployId] [--json]
   capy-app-dev rollback <deployId> [--with-data] [--yes] [--json]
   capy-app-dev versions [--json]
-  capy-app-dev save [--dir <path>] [-m <message>] [--json]
+  capy-app-dev save -m <message> [--dir <path>] [--json]
   capy-app-dev version
   capy-app-dev help
 

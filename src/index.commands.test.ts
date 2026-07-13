@@ -82,6 +82,40 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+// Deploy now save()s the workspace source before uploading the build. saveWorkspace
+// hits a small chain of code-sync endpoints first; this returns success responses
+// for each so the save leg completes (yielding a snapshotId) and the deploy leg can
+// proceed. Returns null for any non-code URL so the caller can supply its own
+// deploy response.
+function codeApiResponse(url: string): Response | null {
+  if (/\/code\/ignore$/.test(url)) {
+    return jsonResponse({ patterns: [] });
+  }
+  if (/\/code\/sync$/.test(url)) {
+    return jsonResponse({ missing: [], ignored: 0 });
+  }
+  if (/\/code\/blobs\//.test(url)) {
+    return jsonResponse({ success: true });
+  }
+  if (/\/code\/sync\/commit$/.test(url)) {
+    return jsonResponse({
+      success: true,
+      created: 0,
+      updated: 0,
+      deleted: 0,
+      snapshot: {
+        id: "asnap_test",
+        label: "snapshot-1",
+        message: "test snapshot",
+        fileCount: 0,
+        sizeBytes: 0,
+        createdAt: "2026-01-01T00:00:00Z",
+      },
+    });
+  }
+  return null;
+}
+
 // ---- temp cwd + env ----------------------------------------------------------
 const ENV_KEYS = ["CAPY_API_URL", "CAPY_SECRET", "CAPY_AUTH_TOKEN", "CAPY_USER_ID"] as const;
 let envSnapshot: Record<string, string | undefined> = {};
@@ -520,27 +554,33 @@ describe("runDeploy", () => {
   it("packages dist and deploys, printing the result", async () => {
     await writeConfig("demo-app");
     await stageDist();
-    stubFetch(() =>
-      jsonResponse({
-        success: true,
-        deployment: {
-          appName: "demo-app",
-          url: "https://demo-app.example",
-          version: "v7",
-          assetsCount: 1,
-          deployedAt: "2026-04-04",
-        },
-        previewUrl: "https://demo-app--abc123.example",
-        deployId: "abc123",
-        published: true,
-      }),
+    stubFetch(
+      (call) =>
+        codeApiResponse(call.url) ??
+        jsonResponse({
+          success: true,
+          deployment: {
+            appName: "demo-app",
+            url: "https://demo-app.example",
+            version: "v7",
+            assetsCount: 1,
+            deployedAt: "2026-04-04",
+          },
+          previewUrl: "https://demo-app--abc123.example",
+          deployId: "abc123",
+          published: true,
+        }),
     );
 
-    const out = await capture(() => runDeploy([], false));
+    const out = await capture(() => runDeploy(["-m", "ship v7"], false));
 
-    assert.equal(calls[0].init?.method, "POST");
-    assert.match(calls[0].url, /\/api\/apps\/demo-app\/deploy$/);
-    assert.ok(calls[0].init?.body instanceof FormData, "deploy uploads multipart FormData");
+    const deployCall = calls.find((c) => /\/deploy$/.test(c.url));
+    assert.ok(deployCall, "expected a POST to the /deploy endpoint");
+    assert.equal(deployCall.init?.method, "POST");
+    assert.match(deployCall.url, /\/api\/apps\/demo-app\/deploy$/);
+    assert.ok(deployCall.init?.body instanceof FormData, "deploy uploads multipart FormData");
+    // The deploy carries the source snapshot id produced by the save leg.
+    assert.equal((deployCall.init?.body as FormData).get("snapshotId"), "asnap_test");
     assert.match(out, /Deployment successful/);
     assert.match(out, /Version: v7/);
     assert.match(out, /Deployed demo-app — live at/);
@@ -549,19 +589,25 @@ describe("runDeploy", () => {
   it("throws MISSING_DEPLOY_MANIFEST when dist/deploy.json is absent", async () => {
     await writeConfig("demo-app");
     await mkdir(path.join(workDir, "dist"), { recursive: true });
-    stubFetch(() => jsonResponse({}));
+    // Let the (best-effort) save leg succeed; packaging must still fail hard.
+    stubFetch((call) => codeApiResponse(call.url) ?? jsonResponse({}));
     await assert.rejects(
-      runDeploy([], false),
+      runDeploy(["-m", "attempt"], false),
       (err: unknown) => err instanceof CliError && err.code === "MISSING_DEPLOY_MANIFEST",
     );
-    assert.equal(calls.length, 0, "must not deploy when packaging fails");
+    // Packaging fails before the deploy POST — no /deploy request is made.
+    assert.equal(
+      calls.filter((c) => /\/deploy$/.test(c.url)).length,
+      0,
+      "must not deploy when packaging fails",
+    );
   });
 
   it("throws BUILD_DIR_NOT_FOUND when the build dir is missing", async () => {
     await writeConfig("demo-app");
-    stubFetch(() => jsonResponse({}));
+    stubFetch((call) => codeApiResponse(call.url) ?? jsonResponse({}));
     await assert.rejects(
-      runDeploy([], false),
+      runDeploy(["-m", "attempt"], false),
       (err: unknown) => err instanceof CliError && err.code === "BUILD_DIR_NOT_FOUND",
     );
   });
@@ -575,7 +621,10 @@ describe("runDeploy", () => {
     );
   }
 
-  const deployOkResponse = () =>
+  // Dispatches the save-leg code endpoints to success, then answers the /deploy
+  // POST with a canned deploy response.
+  const deployOkResponse = (call: FetchCall) =>
+    codeApiResponse(call.url) ??
     jsonResponse({
       success: true,
       deployment: {
@@ -590,14 +639,22 @@ describe("runDeploy", () => {
       published: false,
     });
 
+  // Locate the deploy POST among the calls (it is the last request, after the
+  // save-leg code endpoints).
+  const findDeployCall = (): FetchCall => {
+    const deployCall = calls.find((c) => /\/deploy$/.test(c.url));
+    assert.ok(deployCall, "expected a POST to the /deploy endpoint");
+    return deployCall;
+  };
+
   it("uploads env vars as plain_text bindings in the `config` field", async () => {
     await writeConfigWithEnv("demo-app", { APP_TITLE: "Hello", MODE: "production" });
     await stageDist();
     stubFetch(deployOkResponse);
 
-    await capture(() => runDeploy([], false));
+    await capture(() => runDeploy(["-m", "with env"], false));
 
-    const body = calls[0].init?.body;
+    const body = findDeployCall().init?.body;
     assert.ok(body instanceof FormData, "deploy uploads multipart FormData");
     const configField = body.get("config");
     assert.equal(typeof configField, "string", "config must be a serialized string field");
@@ -616,9 +673,9 @@ describe("runDeploy", () => {
     await stageDist();
     stubFetch(deployOkResponse);
 
-    await capture(() => runDeploy([], false));
+    await capture(() => runDeploy(["-m", "no env"], false));
 
-    const body = calls[0].init?.body as FormData;
+    const body = findDeployCall().init?.body as FormData;
     assert.equal(body.get("config"), null, "no config field when there is no env");
   });
 
@@ -627,9 +684,9 @@ describe("runDeploy", () => {
     await stageDist();
     stubFetch(deployOkResponse);
 
-    await capture(() => runDeploy([], false));
+    await capture(() => runDeploy(["-m", "empty env"], false));
 
-    const body = calls[0].init?.body as FormData;
+    const body = findDeployCall().init?.body as FormData;
     assert.equal(body.get("config"), null, "no config field for an empty env object");
   });
 
@@ -639,7 +696,7 @@ describe("runDeploy", () => {
     stubFetch(deployOkResponse);
 
     await assert.rejects(
-      runDeploy([], false),
+      runDeploy(["-m", "bad env"], false),
       (err: unknown) => err instanceof CliError && err.code === "INVALID_PROJECT_CONFIG",
     );
     assert.equal(calls.length, 0, "must not reach the API with an invalid env");
@@ -651,10 +708,24 @@ describe("runDeploy", () => {
     stubFetch(deployOkResponse);
 
     await assert.rejects(
-      runDeploy([], false),
+      runDeploy(["-m", "bad env"], false),
       (err: unknown) => err instanceof CliError && err.code === "INVALID_PROJECT_CONFIG",
     );
     assert.equal(calls.length, 0);
+  });
+
+  it("rejects a missing -m message with MISSING_MESSAGE (exit 2) before any network call", async () => {
+    await writeConfig("demo-app");
+    await stageDist();
+    stubFetch((call) => codeApiResponse(call.url) ?? jsonResponse({}));
+
+    await assert.rejects(runDeploy([], false), (err: unknown) => {
+      assert.ok(err instanceof CliError);
+      assert.equal(err.code, "MISSING_MESSAGE");
+      assert.equal(err.exitCode, 2);
+      return true;
+    });
+    assert.equal(calls.length, 0, "must not hit the API without a message");
   });
 });
 
